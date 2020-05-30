@@ -10,21 +10,16 @@ use serenity::client::Client;
 use serenity::model::{channel::GuildChannel, channel::Message, guild::GuildInfo, user::User};
 use serenity::prelude::{Context, EventHandler, TypeMapKey};
 
-struct UserData;
+struct NotifData;
 
-impl TypeMapKey for UserData {
-    type Value = Vec<PCUser>;
+impl TypeMapKey for NotifData {
+    type Value = Vec<NotifChannel>;
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct PCUser {
+struct NotifChannel {
     id: u64,
-    subscribed_channels: Vec<PCChannel>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct PCChannel {
-    id: u64,
+    subscribed_users: Vec<u64>,
 }
 
 struct Handler;
@@ -43,19 +38,10 @@ impl EventHandler for Handler {
 
 fn handle_add_vc_notify(ctx: Context, msg: Message) {
     let mut data = ctx.data.write();
-    let users = data.get_mut::<UserData>().unwrap();
+    let notif_data = data.get_mut::<NotifData>().unwrap();
 
     let author = &msg.author;
     let id: u64 = author.id.into();
-
-    let user = get_or_create_user(users, id);
-
-    // Check if msg contains a channel argument.
-    // If so,
-    //   Add channel to list of subscribed channels.
-    // If not,
-    //   Find guilds shared by the bot and the user,
-    //   send back a list of possible channels to subscribe to.
 
     let channel = match get_channel_argument_from_msg(&msg) {
         Some(c) => c,
@@ -73,31 +59,68 @@ fn handle_add_vc_notify(ctx: Context, msg: Message) {
         }
     };
 
-    user.subscribed_channels.push(PCChannel { id: channel_id });
+    let notif_channel = get_or_create_notif_channel(notif_data, channel_id);
 
-    if let Err(err) = save_users(users) {
-        println!("Error saving users.json: {:?}", err);
+    notif_channel.subscribed_users.push(id);
+
+    send_reply(&ctx, author, "Subscribed to notifications for channel!");
+
+    if let Err(err) = save_notif_data(notif_data) {
+        println!("Error saving notif_data.json: {:?}", err);
     }
 }
 
 fn handle_remove_vc_notify(ctx: Context, msg: Message) {
     let mut data = ctx.data.write();
-    let users = data.get_mut::<UserData>().unwrap();
+    let notif_data = data.get_mut::<NotifData>().unwrap();
 
     let author = &msg.author;
     let id: u64 = author.id.into();
 
-    let user = match get_user(users, id) {
-        Some(user) => user,
+    let channel = match get_channel_argument_from_msg(&msg) {
+        Some(c) => c,
         None => {
-            send_reply(
-                &ctx,
-                &msg.author,
-                "You are not subscribed to any voice channels!",
-            );
+            send_reply(&ctx, author, "Usage: `!remove-vc-notify <channel id>`!");
             return;
         }
     };
+
+    let channel_id = match channel.parse::<u64>() {
+        Ok(id) => id,
+        Err(_) => {
+            send_reply(&ctx, author, "Not a valid channel ID!");
+            return;
+        }
+    };
+
+    // TODO: Refactor all the `match { None => return }` to use an unwrap_ method instead.
+
+    let notif_channel = match get_notif_channel(notif_data, channel_id) {
+        None => {
+            send_reply(&ctx, author, "You are not subscribed to this channel!");
+            return;
+        }
+        Some(notif_channel) => notif_channel,
+    };
+
+    match notif_channel.subscribed_users.iter().position(|&u| u == id) {
+        None => {
+            send_reply(&ctx, author, "You are noit subscribed to this channel!");
+            return;
+        }
+        Some(idx) => {
+            notif_channel.subscribed_users.swap_remove(idx);
+            send_reply(
+                &ctx,
+                author,
+                "Unscribed from notifications for this channel!",
+            );
+        }
+    }
+
+    if let Err(err) = save_notif_data(notif_data) {
+        println!("Error saving notif_data.json: {:?}", err);
+    }
 }
 
 fn send_reply(ctx: &Context, recipient: &User, text: &str) {
@@ -112,19 +135,22 @@ fn send_reply(ctx: &Context, recipient: &User, text: &str) {
     }
 }
 
-fn get_user(users: &mut Vec<PCUser>, id: u64) -> Option<&mut PCUser> {
-    users.iter_mut().find(|u| u.id == id)
+fn get_notif_channel(notif_data: &mut Vec<NotifChannel>, id: u64) -> Option<&mut NotifChannel> {
+    notif_data.iter_mut().find(|c| c.id == id)
 }
 
-fn get_or_create_user(users: &mut Vec<PCUser>, id: u64) -> &mut PCUser {
-    let idx = users.iter().position(|u| u.id == id).unwrap_or_else(|| {
-        users.push(PCUser {
-            id: id,
-            subscribed_channels: vec![],
+fn get_or_create_notif_channel(notif_data: &mut Vec<NotifChannel>, id: u64) -> &mut NotifChannel {
+    let idx = notif_data
+        .iter()
+        .position(|c| c.id == id)
+        .unwrap_or_else(|| {
+            notif_data.push(NotifChannel {
+                id: id,
+                subscribed_users: vec![],
+            });
+            notif_data.len() - 1
         });
-        users.len() - 1
-    });
-    &mut users[idx]
+    &mut notif_data[idx]
 }
 
 fn get_channel_argument_from_msg(msg: &Message) -> Option<String> {
@@ -192,12 +218,15 @@ fn get_list_of_common_channels(
 fn main() {
     println!("Starting up...");
 
-    let registered_users = load_users().unwrap_or_else(|err| {
-        println!("Error loading users.json file: {:?}", err);
+    let notif_data = load_notif_data().unwrap_or_else(|err| {
+        println!("Error loading notif_data.json file: {:?}", err);
         process::exit(1)
     });
 
-    println!("Loaded {} users from users.json.", registered_users.len());
+    println!(
+        "Loaded subscription information for {} channels.",
+        notif_data.len()
+    );
 
     let mut client = Client::new(
         &env::var("PROBLEM_CHILD_TOKEN").expect("PROBLEM_CHILD_TOKEN"),
@@ -207,7 +236,7 @@ fn main() {
 
     {
         let mut data = client.data.write();
-        data.insert::<UserData>(registered_users);
+        data.insert::<NotifData>(notif_data);
     }
 
     if let Err(err) = client.start() {
@@ -215,38 +244,40 @@ fn main() {
     }
 }
 
-fn load_users() -> Result<Vec<PCUser>, Box<dyn Error>> {
-    match File::open("users.json") {
+fn load_notif_data() -> Result<Vec<NotifChannel>, Box<dyn Error>> {
+    match File::open("notif_data.json") {
         Err(err) => match err.kind() {
-            // In case the file doesn't exist, just return an empty initial users list.
+            // In case the file doesn't exist, just return an empty initial notifications list.
             ErrorKind::NotFound => {
-                println!("users.json file not found, proceeding with empty users list.");
+                println!(
+                    "notif_data.json file not found, proceeding with empty notifications list."
+                );
                 Ok(vec![])
             }
             // For any other errors, we should probably read the file but can't, so error out.
             _ => Err(Box::new(err)),
         },
-        Ok(users_file) => {
+        Ok(notif_file) => {
             // If the file can be read fine, parse it into a users list.
             // If any errors occur here, those are fatal, just pass them up.
-            let reader = BufReader::new(users_file);
-            let users = serde_json::from_reader(reader)?;
-            Ok(users)
+            let reader = BufReader::new(notif_file);
+            let notif_data = serde_json::from_reader(reader)?;
+            Ok(notif_data)
         }
     }
 }
 
-fn save_users(users: &Vec<PCUser>) -> Result<(), Box<dyn Error>> {
+fn save_notif_data(notif_data: &Vec<NotifChannel>) -> Result<(), Box<dyn Error>> {
     match OpenOptions::new()
         .write(true)
         .create(true)
         .truncate(true)
-        .open("users.json")
+        .open("notif_data.json")
     {
         Err(err) => Err(Box::new(err)),
-        Ok(users_file) => {
-            let writer = BufWriter::new(users_file);
-            if let Err(err) = serde_json::to_writer_pretty(writer, users) {
+        Ok(notif_file) => {
+            let writer = BufWriter::new(notif_file);
+            if let Err(err) = serde_json::to_writer_pretty(writer, notif_data) {
                 Err(Box::new(err))
             } else {
                 Ok(())
