@@ -10,7 +10,9 @@ use serenity::client::Client;
 use serenity::model::{
     channel::{ChannelType, GuildChannel, Message},
     guild::GuildInfo,
-    user::User,
+    id::{GuildId, UserId},
+    user::{OnlineStatus, User},
+    voice::VoiceState,
 };
 use serenity::prelude::{Context, EventHandler, TypeMapKey};
 
@@ -42,6 +44,102 @@ impl EventHandler for Handler {
             handle_remove_vc_notify(&ctx, msg);
         }
     }
+
+    fn voice_state_update(
+        &self,
+        ctx: Context,
+        _guild: Option<GuildId>,
+        old: Option<VoiceState>,
+        new: VoiceState,
+    ) {
+        if !is_join_event(&old, &new) {
+            return;
+        }
+
+        send_notifications(&ctx, &new);
+    }
+}
+
+fn is_join_event(old: &Option<VoiceState>, new_state: &VoiceState) -> bool {
+    let old_state = match old {
+        None => return true,
+        Some(o) => o,
+    };
+
+    let old_channel = match old_state.channel_id {
+        None => return true,
+        Some(id) => id,
+    };
+
+    let new_channel = match new_state.channel_id {
+        None => return false,
+        Some(id) => id,
+    };
+
+    old_channel != new_channel
+}
+
+fn send_notifications(ctx: &Context, voice_state: &VoiceState) {
+    let channel_id = match voice_state.channel_id {
+        None => return,
+        Some(id) => id,
+    };
+
+    let mut data = ctx.data.write();
+    let notif_data = data.get_mut::<NotifData>().unwrap();
+
+    let notif_channel = match get_notif_channel(notif_data, channel_id.into()) {
+        None => return,
+        Some(c) => c,
+    };
+
+    let channel = match channel_id.to_channel(&ctx.http) {
+        Err(_) => return,
+        Ok(c) => c,
+    };
+
+    let guild_channel = match channel.guild() {
+        None => return,
+        Some(g) => g,
+    };
+
+    let guild_lock = match guild_channel.read().guild(&ctx.cache) {
+        None => return,
+        Some(g) => g,
+    };
+
+    let guild = guild_lock.read();
+
+    for uid in &notif_channel.subscribed_users {
+        let user_id = UserId::from(*uid);
+
+        let presence = match guild.presences.get(&user_id) {
+            None => continue,
+            Some(p) => p,
+        };
+
+        let send_notif = match presence.status {
+            OnlineStatus::Online => true,
+            OnlineStatus::Idle => true,
+            OnlineStatus::DoNotDisturb => false,
+            OnlineStatus::Invisible => false,
+            OnlineStatus::Offline => false,
+            _ => false,
+        };
+
+        if send_notif {
+            let user = match user_id.to_user(&ctx.http) {
+                Err(_) => continue,
+                Ok(u) => u,
+            };
+
+            send_msg(
+                &ctx,
+                &user,
+                "Someone joined a voice channel you are subscribed to!",
+            );
+        }
+    }
 }
 
 fn handle_add_vc_notify(ctx: &Context, msg: Message) {
@@ -62,7 +160,7 @@ fn handle_add_vc_notify(ctx: &Context, msg: Message) {
     let channel_id = match channel.parse::<u64>() {
         Ok(id) => id,
         Err(_) => {
-            send_reply(&ctx, author, "Not a valid channel ID!");
+            send_msg(&ctx, author, "Not a valid channel ID!");
             return;
         }
     };
@@ -71,7 +169,7 @@ fn handle_add_vc_notify(ctx: &Context, msg: Message) {
 
     notif_channel.subscribed_users.push(id);
 
-    send_reply(&ctx, author, "Subscribed to notifications for channel!");
+    send_msg(&ctx, author, "Subscribed to notifications for channel!");
 
     if let Err(err) = save_notif_data(notif_data) {
         println!("Error saving notif_data.json: {:?}", err);
@@ -88,7 +186,7 @@ fn handle_remove_vc_notify(ctx: &Context, msg: Message) {
     let channel = match get_channel_argument_from_msg(&msg) {
         Some(c) => c,
         None => {
-            send_reply(&ctx, author, "Usage: `!remove-vc-notify <channel id>`!");
+            send_msg(&ctx, author, "Usage: `!remove-vc-notify <channel id>`!");
             return;
         }
     };
@@ -96,7 +194,7 @@ fn handle_remove_vc_notify(ctx: &Context, msg: Message) {
     let channel_id = match channel.parse::<u64>() {
         Ok(id) => id,
         Err(_) => {
-            send_reply(&ctx, author, "Not a valid channel ID!");
+            send_msg(&ctx, author, "Not a valid channel ID!");
             return;
         }
     };
@@ -105,7 +203,7 @@ fn handle_remove_vc_notify(ctx: &Context, msg: Message) {
 
     let notif_channel = match get_notif_channel(notif_data, channel_id) {
         None => {
-            send_reply(&ctx, author, "You are not subscribed to this channel!");
+            send_msg(&ctx, author, "You are not subscribed to this channel!");
             return;
         }
         Some(notif_channel) => notif_channel,
@@ -113,12 +211,12 @@ fn handle_remove_vc_notify(ctx: &Context, msg: Message) {
 
     match notif_channel.subscribed_users.iter().position(|&u| u == id) {
         None => {
-            send_reply(&ctx, author, "You are noit subscribed to this channel!");
+            send_msg(&ctx, author, "You are noit subscribed to this channel!");
             return;
         }
         Some(idx) => {
             notif_channel.subscribed_users.swap_remove(idx);
-            send_reply(
+            send_msg(
                 &ctx,
                 author,
                 "Unscribed from notifications for this channel!",
@@ -131,7 +229,7 @@ fn handle_remove_vc_notify(ctx: &Context, msg: Message) {
     }
 }
 
-fn send_reply(ctx: &Context, recipient: &User, text: &str) {
+fn send_msg(ctx: &Context, recipient: &User, text: &str) {
     let dm = recipient.dm(ctx, |m| {
         m.content(text);
 
@@ -186,10 +284,10 @@ fn send_list_of_common_channels(ctx: &Context, user: &User) {
                 msg.push_str(&format!("\n[{}] {} <{}>", c.0.name, c.1.name, c.1.id));
             }
 
-            send_reply(ctx, user, &msg);
+            send_msg(ctx, user, &msg);
         }
         Err(err) => {
-            send_reply(ctx, user, "Failed to find common channels!");
+            send_msg(ctx, user, "Failed to find common channels!");
             println!("Error finding common channels: {:?}", err);
         }
     }
