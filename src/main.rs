@@ -7,7 +7,11 @@ use std::process;
 use serde::{Deserialize, Serialize};
 
 use serenity::client::Client;
-use serenity::model::{channel::GuildChannel, channel::Message, guild::GuildInfo, user::User};
+use serenity::model::{
+    channel::{ChannelType, GuildChannel, Message},
+    guild::GuildInfo,
+    user::User,
+};
 use serenity::prelude::{Context, EventHandler, TypeMapKey};
 
 struct NotifData;
@@ -212,7 +216,10 @@ fn get_list_of_common_channels(
         }
     }
 
-    Ok(common_channels)
+    Ok(common_channels
+        .into_iter()
+        .filter(|(_, c)| c.kind == ChannelType::Voice)
+        .collect())
 }
 
 fn main() {
