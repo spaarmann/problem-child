@@ -98,20 +98,30 @@ fn send_notifications(ctx: &Context, voice_state: &VoiceState) {
         Ok(c) => c,
     };
 
-    let guild_channel = match channel.guild() {
+    let guild_channel_lock = match channel.guild() {
+        None => return,
+        Some(g) => g,
+    };
+    let guild_channel = guild_channel_lock.read();
+
+    let guild_lock = match guild_channel.guild(&ctx.cache) {
         None => return,
         Some(g) => g,
     };
 
-    let guild_lock = match guild_channel.read().guild(&ctx.cache) {
-        None => return,
-        Some(g) => g,
+    let joined_user_name = match voice_state.user_id.to_user(&ctx.http) {
+        Err(_) => "Someone".to_string(),
+        Ok(u) => u.name,
     };
 
     let guild = guild_lock.read();
 
     for uid in &notif_channel.subscribed_users {
         let user_id = UserId::from(*uid);
+
+        if user_id == voice_state.user_id {
+            continue;
+        }
 
         let presence = match guild.presences.get(&user_id) {
             None => continue,
@@ -136,7 +146,10 @@ fn send_notifications(ctx: &Context, voice_state: &VoiceState) {
             send_msg(
                 &ctx,
                 &user,
-                "Someone joined a voice channel you are subscribed to!",
+                &format!(
+                    "{} joined {} on {}!",
+                    joined_user_name, guild_channel.name, guild.name
+                ),
             );
         }
     }
