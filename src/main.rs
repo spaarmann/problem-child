@@ -30,17 +30,21 @@ struct Handler;
 
 impl EventHandler for Handler {
     fn message(&self, ctx: Context, msg: Message) {
+        if msg.is_own(&ctx.cache) {
+            return;
+        }
+
         println!("Received message from {}: {}", msg.author, msg.content);
 
         if msg.content.starts_with("!add-vc-notify") {
-            handle_add_vc_notify(ctx, msg);
+            handle_add_vc_notify(&ctx, msg);
         } else if msg.content.starts_with("!remove-vc-notify") {
-            handle_remove_vc_notify(ctx, msg);
+            handle_remove_vc_notify(&ctx, msg);
         }
     }
 }
 
-fn handle_add_vc_notify(ctx: Context, msg: Message) {
+fn handle_add_vc_notify(ctx: &Context, msg: Message) {
     let mut data = ctx.data.write();
     let notif_data = data.get_mut::<NotifData>().unwrap();
 
@@ -74,7 +78,7 @@ fn handle_add_vc_notify(ctx: Context, msg: Message) {
     }
 }
 
-fn handle_remove_vc_notify(ctx: Context, msg: Message) {
+fn handle_remove_vc_notify(ctx: &Context, msg: Message) {
     let mut data = ctx.data.write();
     let notif_data = data.get_mut::<NotifData>().unwrap();
 
