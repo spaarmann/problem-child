@@ -104,6 +104,11 @@ fn send_notifications(ctx: &Context, voice_state: &VoiceState) {
     };
     let guild_channel = guild_channel_lock.read();
 
+    let channel_members = guild_channel.members(&ctx.cache).unwrap_or_else(|e| {
+        println!("Failed to get members in channel: {:?}", e);
+        vec![]
+    });
+
     let guild_lock = match guild_channel.guild(&ctx.cache) {
         None => return,
         Some(g) => g,
@@ -120,6 +125,12 @@ fn send_notifications(ctx: &Context, voice_state: &VoiceState) {
         let user_id = UserId::from(*uid);
 
         if user_id == voice_state.user_id {
+            // Don't notify users that they joined themselves.
+            continue;
+        }
+
+        if channel_members.iter().any(|m| m.user_id() == user_id) {
+            // Don't notify users if they are already in the voice channel themselves.
             continue;
         }
 
