@@ -42,6 +42,11 @@ impl EventHandler for Handler {
             handle_add_vc_notify(&ctx, msg);
         } else if msg.content.starts_with("!remove-vc-notify") {
             handle_remove_vc_notify(&ctx, msg);
+        } else if msg.content.starts_with("!help") {
+            handle_help(&ctx, msg);
+        } else {
+            // For an unknown command, also print help for now.
+            handle_help(&ctx, msg);
         }
     }
 
@@ -57,6 +62,10 @@ impl EventHandler for Handler {
         }
 
         send_notifications(&ctx, &new);
+    }
+
+    fn unknown(&self, _ctx: Context, name: String, _raw: serde_json::Value) {
+        println!("Received unknown event: {}!", name);
     }
 }
 
@@ -77,6 +86,13 @@ fn is_join_event(old: &Option<VoiceState>, new_state: &VoiceState) -> bool {
     };
 
     old_channel != new_channel
+}
+
+fn handle_help(ctx: &Context, msg: Message) {
+    send_msg(ctx, &msg.author, concat!("Hello! I currently support two commands:\n",
+        "- `!add-vc-notify`\n",
+        "- `!remove-vc-notify\n`",
+        "Send any command by itself to get more information!"));
 }
 
 fn send_notifications(ctx: &Context, voice_state: &VoiceState) {
