@@ -9,9 +9,11 @@ use serde::{Deserialize, Serialize};
 use serenity::client::Client;
 use serenity::model::{
     channel::{ChannelType, GuildChannel, Message},
+    event::ResumedEvent,
+    gateway::Ready,
     guild::GuildInfo,
     id::{ChannelId, GuildId, UserId},
-    user::{OnlineStatus, User},
+    user::{CurrentUser, OnlineStatus, User},
     voice::VoiceState,
 };
 use serenity::prelude::{Context, EventHandler, TypeMapKey};
@@ -68,6 +70,29 @@ impl EventHandler for Handler {
         }
 
         send_notifications(&ctx, &new);
+    }
+
+    fn cache_ready(&self, _ctx: Context, _guilds: Vec<GuildId>) {
+        println!("[cache_ready]");
+    }
+
+    fn guild_unavailable(&self, _ctx: Context, guild_id: GuildId) {
+        println!("[guild_unavailable] {}", guild_id);
+    }
+
+    fn ready(&self, _ctx: Context, data_about_bot: Ready) {
+        println!(
+            "[ready] {} (v{})",
+            data_about_bot.session_id, data_about_bot.version
+        );
+    }
+
+    fn resume(&self, _ctx: Context, _: ResumedEvent) {
+        println!("[resume]");
+    }
+
+    fn user_update(&self, _ctx: Context, _old_data: CurrentUser, _new: CurrentUser) {
+        println!("[user_update]");
     }
 
     fn unknown(&self, _ctx: Context, name: String, _raw: serde_json::Value) {
