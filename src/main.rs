@@ -10,7 +10,7 @@ use serenity::client::Client;
 use serenity::model::{
     channel::{ChannelType, GuildChannel, Message},
     guild::GuildInfo,
-    id::{GuildId, UserId},
+    id::{ChannelId, GuildId, UserId},
     user::{OnlineStatus, User},
     voice::VoiceState,
 };
@@ -36,7 +36,7 @@ impl EventHandler for Handler {
             return;
         }
 
-        println!("Received message from {}: {}", msg.author, msg.content);
+        println!("[message] {}: {}", msg.author, msg.content);
 
         if msg.content.starts_with("!add-vc-notify") {
             handle_add_vc_notify(&ctx, msg);
@@ -57,6 +57,12 @@ impl EventHandler for Handler {
         old: Option<VoiceState>,
         new: VoiceState,
     ) {
+        println!(
+            "[voice_state_update] {}: {}",
+            new.user_id,
+            new.channel_id.unwrap_or(ChannelId::from(0))
+        );
+
         if !is_join_event(&old, &new) {
             return;
         }
@@ -65,7 +71,7 @@ impl EventHandler for Handler {
     }
 
     fn unknown(&self, _ctx: Context, name: String, _raw: serde_json::Value) {
-        println!("Received unknown event: {}!", name);
+        println!("[unknown]: {}", name);
     }
 }
 
@@ -89,10 +95,16 @@ fn is_join_event(old: &Option<VoiceState>, new_state: &VoiceState) -> bool {
 }
 
 fn handle_help(ctx: &Context, msg: Message) {
-    send_msg(ctx, &msg.author, concat!("Hello! I currently support two commands:\n",
-        "- `!add-vc-notify`\n",
-        "- `!remove-vc-notify\n`",
-        "Send any command by itself to get more information!"));
+    send_msg(
+        ctx,
+        &msg.author,
+        concat!(
+            "Hello! I currently support two commands:\n",
+            "- `!add-vc-notify`\n",
+            "- `!remove-vc-notify\n`",
+            "Send any command by itself to get more information!"
+        ),
+    );
 }
 
 fn send_notifications(ctx: &Context, voice_state: &VoiceState) {
