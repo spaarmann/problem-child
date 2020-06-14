@@ -1,0 +1,35 @@
+#!/bin/bash
+
+# Simple script to deploy the bot to a server via SSH.
+# The setup is rather specific to my own current server setup,
+# but the process is easy enough to adapt.
+
+# Usage: ./deplopy <server name>
+# where <server name> is any name/address recognized by the local
+# ssh installation.
+
+set -o nounset
+set -o errexit
+
+if [ "$1" == "" ]; then
+  echo "Missing server name argument!"
+  exit 1
+fi
+
+SRV="$1"
+
+echo "========================================================"
+echo "Starting deployment to $SRV"
+echo "========================================================"
+
+echo "# Building release version of package..."
+cargo build --release
+
+echo "# Uploading executable to server..."
+sftp $SRV:tmp_deploy <<< 'put target/release/problem_child'
+
+echo "# Copying executable to runtime directory and restarting..."
+
+ssh $SRV "systemctl --user stop problem_child && cp tmp_deploy/problem_child /opt/problem_child/ && systemctl --user start problem_child"
+
+echo "# Done."
