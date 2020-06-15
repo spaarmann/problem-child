@@ -29,6 +29,10 @@ impl EventHandler for Handler {
             return;
         }
 
+        if !msg.is_private() {
+            return;
+        }
+
         println!("[message] {}: {}", msg.author, msg.content);
 
         if msg.content.starts_with("!add-vc-notify") {
