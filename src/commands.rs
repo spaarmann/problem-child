@@ -158,10 +158,11 @@ fn send_notifications(ctx: &Context, voice_state: &VoiceState) {
         Some(g) => g,
     };
 
-    let joined_user_name = match voice_state.user_id.to_user(&ctx.http) {
-        Err(_) => "Someone".to_string(),
-        Ok(u) => u.name,
-    };
+    let joined_user_name = voice_state
+        .user_id
+        .to_user(&ctx.http)
+        .map(|u| u.name)
+        .unwrap_or("Someone".to_string());
 
     let guild = guild_lock.read();
 
@@ -267,8 +268,6 @@ fn handle_remove_vc_notify(ctx: &Context, msg: Message) {
         }
     };
 
-    // TODO: Refactor all the `match { None => return }` to use an unwrap_ method instead.
-
     let notif_channel = match get_notif_channel(notif_data, channel_id) {
         None => {
             send_msg(&ctx, author, "You are not subscribed to this channel!");
@@ -311,23 +310,17 @@ fn send_msg(ctx: &Context, recipient: &User, text: &str) {
 
 fn get_channel_argument_from_msg(msg: &Message) -> Option<String> {
     let content = &msg.content;
-    match content.find(' ') {
-        None => None,
-        Some(space_idx) => {
-            if space_idx == content.len() {
-                None
-            } else {
-                Some(content[(space_idx + 1)..].to_string())
-            }
-        }
-    }
+    content
+        .trim()
+        .find(' ')
+        .map(|space_idx| content[(space_idx + 1)..].to_string())
 }
 
 fn send_list_of_common_channels(ctx: &Context, user: &User) {
     match get_list_of_common_channels(ctx, user) {
         Ok(channels) => {
             let mut msg = ("Use `!add-vc-notify <channel id>` using one of the following channels:
-[Server] Channel <channel id>")
+                            [Server] Channel <channel id>")
                 .to_string();
 
             for c in channels {
@@ -352,14 +345,10 @@ fn get_list_of_common_channels(
     let mut common_channels = vec![];
 
     for guild in current_guilds {
-        let is_guild_common =
-            match ctx
-                .http
-                .get_guild_members(guild.id.into(), Some(1), Some(user.id.into()))
-            {
-                Ok(members) => members.len() > 0,
-                Err(_) => false,
-            };
+        let is_guild_common = ctx
+            .http
+            .get_guild_members(guild.id.into(), Some(1), Some(user.id.into()))
+            .map_or(false, |members| members.len() > 0);
 
         if is_guild_common {
             if let Ok(guild_channels) = ctx.http.get_channels(guild.id.into()) {
