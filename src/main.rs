@@ -2,20 +2,23 @@ mod commands;
 mod model;
 mod storage;
 
+use log::{error, info};
+use serenity::client::Client;
+use simple_logger;
 use std::env;
 use std::process;
 
-use serenity::client::Client;
-
 fn main() {
-    println!("Starting up...");
+    simple_logger::init().unwrap();
+
+    info!("Starting up...");
 
     let notif_data = storage::load_notif_data().unwrap_or_else(|err| {
-        println!("Error loading notif_data.json file: {:?}", err);
+        error!("Error loading notif_data.json file: {:?}", err);
         process::exit(1)
     });
 
-    println!(
+    info!(
         "Loaded subscription information for {} channels.",
         notif_data.len()
     );
@@ -32,6 +35,6 @@ fn main() {
     }
 
     if let Err(err) = client.start() {
-        println!("An error occured while running the client: {:?}", err);
+        error!("An error occured while running the client: {:?}", err);
     }
 }

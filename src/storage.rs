@@ -1,5 +1,6 @@
 use crate::model::NotifChannel;
 
+use log::info;
 use std::error::Error;
 use std::fs::{File, OpenOptions};
 use std::io::{BufReader, BufWriter, ErrorKind};
@@ -9,9 +10,7 @@ pub fn load_notif_data() -> Result<Vec<NotifChannel>, Box<dyn Error>> {
         Err(err) => match err.kind() {
             // In case the file doesn't exist, just return an empty initial notifications list.
             ErrorKind::NotFound => {
-                println!(
-                    "notif_data.json file not found, proceeding with empty notifications list."
-                );
+                info!("notif_data.json file not found, proceeding with empty notifications list.");
                 Ok(vec![])
             }
             // For any other errors, we should probably read the file but can't, so error out.

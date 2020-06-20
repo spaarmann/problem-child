@@ -1,6 +1,7 @@
 use crate::model::NotifChannel;
 use crate::storage;
 
+use log::{error, info, warn};
 use std::error::Error;
 
 use serenity::model::{
@@ -12,7 +13,6 @@ use serenity::model::{
     user::{CurrentUser, OnlineStatus, User},
     voice::VoiceState,
 };
-
 use serenity::prelude::{Context, EventHandler, TypeMapKey};
 
 pub struct NotifData;
@@ -33,7 +33,7 @@ impl EventHandler for Handler {
             return;
         }
 
-        println!("[message] {}: {}", msg.author, msg.content);
+        info!("[message] {}: {}", msg.author, msg.content);
 
         if msg.content.starts_with("!add-vc-notify") {
             handle_add_vc_notify(&ctx, msg);
@@ -54,7 +54,7 @@ impl EventHandler for Handler {
         old: Option<VoiceState>,
         new: VoiceState,
     ) {
-        println!(
+        info!(
             "[voice_state_update] {}: {}",
             new.user_id,
             new.channel_id.unwrap_or(ChannelId::from(0))
@@ -68,30 +68,30 @@ impl EventHandler for Handler {
     }
 
     fn cache_ready(&self, _ctx: Context, _guilds: Vec<GuildId>) {
-        println!("[cache_ready]");
+        info!("[cache_ready]");
     }
 
     fn guild_unavailable(&self, _ctx: Context, guild_id: GuildId) {
-        println!("[guild_unavailable] {}", guild_id);
+        info!("[guild_unavailable] {}", guild_id);
     }
 
     fn ready(&self, _ctx: Context, data_about_bot: Ready) {
-        println!(
+        info!(
             "[ready] {} (v{})",
             data_about_bot.session_id, data_about_bot.version
         );
     }
 
     fn resume(&self, _ctx: Context, _: ResumedEvent) {
-        println!("[resume]");
+        info!("[resume]");
     }
 
     fn user_update(&self, _ctx: Context, _old_data: CurrentUser, _new: CurrentUser) {
-        println!("[user_update]");
+        info!("[user_update]");
     }
 
     fn unknown(&self, _ctx: Context, name: String, _raw: serde_json::Value) {
-        println!("[unknown]: {}", name);
+        info!("[unknown]: {}", name);
     }
 }
 
@@ -153,7 +153,7 @@ fn send_notifications(ctx: &Context, voice_state: &VoiceState) {
     let guild_channel = guild_channel_lock.read();
 
     let channel_members = guild_channel.members(&ctx.cache).unwrap_or_else(|e| {
-        println!("Failed to get members in channel: {:?}", e);
+        warn!("Failed to get members in channel: {:?}", e);
         vec![]
     });
 
@@ -245,7 +245,7 @@ fn handle_add_vc_notify(ctx: &Context, msg: Message) {
     send_msg(&ctx, author, "Subscribed to notifications for channel!");
 
     if let Err(err) = storage::save_notif_data(notif_data) {
-        println!("Error saving notif_data.json: {:?}", err);
+        error!("Error saving notif_data.json: {:?}", err);
     }
 }
 
@@ -296,7 +296,7 @@ fn handle_remove_vc_notify(ctx: &Context, msg: Message) {
     }
 
     if let Err(err) = storage::save_notif_data(notif_data) {
-        println!("Error saving notif_data.json: {:?}", err);
+        error!("Error saving notif_data.json: {:?}", err);
     }
 }
 
@@ -308,7 +308,7 @@ fn send_msg(ctx: &Context, recipient: &User, text: &str) {
     });
 
     if let Err(err) = dm {
-        println!("Error sending DM to {}: {:?}", recipient, err);
+        warn!("Error sending DM to {}: {:?}", recipient, err);
     }
 }
 
@@ -335,7 +335,7 @@ fn send_list_of_common_channels(ctx: &Context, user: &User) {
         }
         Err(err) => {
             send_msg(ctx, user, "Failed to find common channels!");
-            println!("Error finding common channels: {:?}", err);
+            warn!("Error finding common channels: {:?}", err);
         }
     }
 }
