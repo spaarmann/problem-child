@@ -1,4 +1,4 @@
-use crate::model::NotifChannel;
+use crate::model::PCData;
 use crate::storage;
 
 use log::{error, info, warn};
@@ -15,10 +15,10 @@ use serenity::model::{
 };
 use serenity::prelude::{Context, EventHandler, TypeMapKey};
 
-pub struct NotifData;
+pub struct DataKey;
 
-impl TypeMapKey for NotifData {
-    type Value = Vec<NotifChannel>;
+impl TypeMapKey for DataKey {
+    type Value = PCData;
 }
 
 pub struct Handler;
@@ -133,13 +133,8 @@ fn send_notifications(ctx: &Context, voice_state: &VoiceState) {
         Some(id) => id,
     };
 
-    let mut data = ctx.data.write();
-    let notif_data = data.get_mut::<NotifData>().unwrap();
-
-    let notif_channel = match get_notif_channel(notif_data, channel_id.into()) {
-        None => return,
-        Some(c) => c,
-    };
+    let data = ctx.data.read();
+    let pc_data = data.get::<DataKey>().unwrap();
 
     let channel = match channel_id.to_channel(&ctx.http) {
         Err(_) => return,
@@ -161,6 +156,7 @@ fn send_notifications(ctx: &Context, voice_state: &VoiceState) {
         None => return,
         Some(g) => g,
     };
+    let guild = guild_lock.read();
 
     let joined_user_name = voice_state
         .user_id
@@ -168,56 +164,58 @@ fn send_notifications(ctx: &Context, voice_state: &VoiceState) {
         .map(|u| u.name)
         .unwrap_or("Someone".to_string());
 
-    let guild = guild_lock.read();
+    if let Some(subscribed_users) =
+        pc_data.find_subscribed_users(guild.id.into(), guild_channel.id.into())
+    {
+        for uid in subscribed_users {
+            let user_id = UserId::from(*uid);
 
-    for uid in &notif_channel.subscribed_users {
-        let user_id = UserId::from(*uid);
+            if user_id == voice_state.user_id {
+                // Don't notify users that they joined themselves.
+                continue;
+            }
 
-        if user_id == voice_state.user_id {
-            // Don't notify users that they joined themselves.
-            continue;
-        }
+            if channel_members.iter().any(|m| m.user_id() == user_id) {
+                // Don't notify users if they are already in the voice channel themselves.
+                continue;
+            }
 
-        if channel_members.iter().any(|m| m.user_id() == user_id) {
-            // Don't notify users if they are already in the voice channel themselves.
-            continue;
-        }
-
-        let presence = match guild.presences.get(&user_id) {
-            None => continue,
-            Some(p) => p,
-        };
-
-        let send_notif = match presence.status {
-            OnlineStatus::Online => true,
-            OnlineStatus::Idle => true,
-            OnlineStatus::DoNotDisturb => false,
-            OnlineStatus::Invisible => false,
-            OnlineStatus::Offline => false,
-            _ => false,
-        };
-
-        if send_notif {
-            let user = match user_id.to_user(&ctx.http) {
-                Err(_) => continue,
-                Ok(u) => u,
+            let presence = match guild.presences.get(&user_id) {
+                None => continue,
+                Some(p) => p,
             };
 
-            send_msg(
-                &ctx,
-                &user,
-                &format!(
-                    "{} joined {} on {}!",
-                    joined_user_name, guild_channel.name, guild.name
-                ),
-            );
+            let send_notif = match presence.status {
+                OnlineStatus::Online => true,
+                OnlineStatus::Idle => true,
+                OnlineStatus::DoNotDisturb => false,
+                OnlineStatus::Invisible => false,
+                OnlineStatus::Offline => false,
+                _ => false,
+            };
+
+            if send_notif {
+                let user = match user_id.to_user(&ctx.http) {
+                    Err(_) => continue,
+                    Ok(u) => u,
+                };
+
+                send_msg(
+                    &ctx,
+                    &user,
+                    &format!(
+                        "{} joined {} on {}!",
+                        joined_user_name, guild_channel.name, guild.name
+                    ),
+                );
+            }
         }
     }
 }
 
 fn handle_add_vc_notify(ctx: &Context, msg: Message) {
     let mut data = ctx.data.write();
-    let notif_data = data.get_mut::<NotifData>().unwrap();
+    let pc_data = data.get_mut::<DataKey>().unwrap();
 
     let author = &msg.author;
     let id: u64 = author.id.into();
@@ -238,25 +236,62 @@ fn handle_add_vc_notify(ctx: &Context, msg: Message) {
         }
     };
 
-    let notif_channel = get_or_create_notif_channel(notif_data, channel_id);
+    let channel = match ctx.http.get_channel(channel_id) {
+        Ok(c) => c,
+        Err(_) => {
+            send_msg(&ctx, author, "Could not find channel!");
+            return;
+        }
+    };
 
-    notif_channel.subscribed_users.push(id);
+    let guild_channel_lock = match channel.guild() {
+        Some(gc) => gc,
+        None => {
+            send_msg(
+                &ctx,
+                author,
+                "Could not find server that the channel belongs to!",
+            );
+            return;
+        }
+    };
+    let guild_channel = guild_channel_lock.read();
 
-    send_msg(&ctx, author, "Subscribed to notifications for channel!");
+    let guild_name = guild_channel
+        .guild(&ctx.cache)
+        // TODO: can this be done cleanly without clone()?
+        .map(|g| g.read().name.clone())
+        .unwrap_or("<error fetching server name>".to_string());
 
-    if let Err(err) = storage::save_notif_data(notif_data) {
+    // TODO: Need to now actually do some stuff here:
+    // - Try and find channel with ID
+    // - Get guild for channel
+    // This also allows errors for wrong IDs and name in the answer for correct IDs.
+
+    pc_data.add_subscription(id, guild_channel.guild_id.into(), channel_id);
+
+    send_msg(
+        &ctx,
+        author,
+        &format!(
+            "Subscribed to notifications for {} on {}!",
+            guild_channel.name, guild_name
+        ),
+    );
+
+    if let Err(err) = storage::save_data(pc_data) {
         error!("Error saving notif_data.json: {:?}", err);
     }
 }
 
 fn handle_remove_vc_notify(ctx: &Context, msg: Message) {
     let mut data = ctx.data.write();
-    let notif_data = data.get_mut::<NotifData>().unwrap();
+    let pc_data = data.get_mut::<DataKey>().unwrap();
 
     let author = &msg.author;
     let id: u64 = author.id.into();
 
-    let channel = match get_channel_argument_from_msg(&msg) {
+    let channel_input = match get_channel_argument_from_msg(&msg) {
         Some(c) => c,
         None => {
             send_msg(&ctx, author, "Usage: `!remove-vc-notify <channel id>`!");
@@ -264,7 +299,7 @@ fn handle_remove_vc_notify(ctx: &Context, msg: Message) {
         }
     };
 
-    let channel_id = match channel.parse::<u64>() {
+    let channel_id = match channel_input.parse::<u64>() {
         Ok(id) => id,
         Err(_) => {
             send_msg(&ctx, author, "Not a valid channel ID!");
@@ -272,30 +307,38 @@ fn handle_remove_vc_notify(ctx: &Context, msg: Message) {
         }
     };
 
-    let notif_channel = match get_notif_channel(notif_data, channel_id) {
-        None => {
-            send_msg(&ctx, author, "You are not subscribed to this channel!");
+    let channel = match ctx.http.get_channel(channel_id) {
+        Ok(c) => c,
+        Err(_) => {
+            send_msg(&ctx, author, "Could not find channel!");
             return;
         }
-        Some(notif_channel) => notif_channel,
     };
 
-    match notif_channel.subscribed_users.iter().position(|&u| u == id) {
+    let guild_channel_lock = match channel.guild() {
+        Some(gc) => gc,
         None => {
-            send_msg(&ctx, author, "You are noit subscribed to this channel!");
-            return;
-        }
-        Some(idx) => {
-            notif_channel.subscribed_users.swap_remove(idx);
             send_msg(
                 &ctx,
                 author,
-                "Unscribed from notifications for this channel!",
+                "Could not find server that the channel belongs to!",
             );
+            return;
         }
+    };
+    let guild_channel = guild_channel_lock.read();
+
+    if pc_data.remove_subscription(id, guild_channel.guild_id.into(), channel_id) {
+        send_msg(
+            &ctx,
+            author,
+            "Unscribed from notifications for this channel!",
+        );
+    } else {
+        send_msg(&ctx, author, "You are not subscribed to this channel!");
     }
 
-    if let Err(err) = storage::save_notif_data(notif_data) {
+    if let Err(err) = storage::save_data(pc_data) {
         error!("Error saving notif_data.json: {:?}", err);
     }
 }
@@ -367,20 +410,6 @@ fn get_list_of_common_channels(
         .collect())
 }
 
-fn get_notif_channel(notif_data: &mut Vec<NotifChannel>, id: u64) -> Option<&mut NotifChannel> {
+/*fn get_notif_channel(notif_data: &mut Vec<NotifChannel>, id: u64) -> Option<&mut NotifChannel> {
     notif_data.iter_mut().find(|c| c.id == id)
-}
-
-fn get_or_create_notif_channel(notif_data: &mut Vec<NotifChannel>, id: u64) -> &mut NotifChannel {
-    let idx = notif_data
-        .iter()
-        .position(|c| c.id == id)
-        .unwrap_or_else(|| {
-            notif_data.push(NotifChannel {
-                id: id,
-                subscribed_users: vec![],
-            });
-            notif_data.len() - 1
-        });
-    &mut notif_data[idx]
-}
+}*/

@@ -1,46 +1,39 @@
-use crate::model::NotifChannel;
+use crate::model::PCData;
 
 use log::info;
 use std::error::Error;
 use std::fs::{File, OpenOptions};
 use std::io::{BufReader, BufWriter, ErrorKind};
 
-pub fn load_notif_data() -> Result<Vec<NotifChannel>, Box<dyn Error>> {
-    match File::open("notif_data.json") {
+// Simply loads configuration data from pc_data.json in the current workding directory.
+// If the file doesn't exist, returns a default configuration instead.
+// On any other errors, returns the error instead.
+pub fn load_data() -> Result<PCData, Box<dyn Error>> {
+    match File::open("pc_data.json") {
+        Ok(file) => {
+            let reader = BufReader::new(file);
+            let data = serde_json::from_reader(reader)?;
+            Ok(data)
+        }
         Err(err) => match err.kind() {
-            // In case the file doesn't exist, just return an empty initial notifications list.
             ErrorKind::NotFound => {
-                info!("notif_data.json file not found, proceeding with empty notifications list.");
-                Ok(vec![])
+                info!("pc_data.json file not found, proceeding with new default data.");
+                Ok(PCData::default())
             }
-            // For any other errors, we should probably read the file but can't, so error out.
             _ => Err(Box::new(err)),
         },
-        Ok(notif_file) => {
-            // If the file can be read fine, parse it into a users list.
-            // If any errors occur here, those are fatal, just pass them up.
-            let reader = BufReader::new(notif_file);
-            let notif_data = serde_json::from_reader(reader)?;
-            Ok(notif_data)
-        }
     }
 }
 
-pub fn save_notif_data(notif_data: &Vec<NotifChannel>) -> Result<(), Box<dyn Error>> {
-    match OpenOptions::new()
+pub fn save_data(data: &PCData) -> Result<(), Box<dyn Error>> {
+    OpenOptions::new()
         .write(true)
         .create(true)
         .truncate(true)
-        .open("notif_data.json")
-    {
-        Err(err) => Err(Box::new(err)),
-        Ok(notif_file) => {
-            let writer = BufWriter::new(notif_file);
-            if let Err(err) = serde_json::to_writer_pretty(writer, notif_data) {
-                Err(Box::new(err))
-            } else {
-                Ok(())
-            }
-        }
-    }
+        .open("pc_data.json")
+        .and_then(|file| {
+            let writer = BufWriter::new(file);
+            serde_json::to_writer_pretty(writer, data).map_err(|e| e.into())
+        })
+        .map_err(|e| e.into())
 }
