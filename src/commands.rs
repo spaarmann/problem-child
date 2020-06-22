@@ -39,10 +39,8 @@ impl EventHandler for Handler {
             handle_add_vc_notify(&ctx, msg);
         } else if msg.content.starts_with("!remove-vc-notify") {
             handle_remove_vc_notify(&ctx, msg);
-        } else if msg.content.starts_with("!help") {
-            handle_help(&ctx, msg);
         } else {
-            // For an unknown command, also print help for now.
+            // !help, or an unknown command, also print help for now.
             handle_help(&ctx, msg);
         }
     }
@@ -57,7 +55,7 @@ impl EventHandler for Handler {
         info!(
             "[voice_state_update] {}: {}",
             new.user_id,
-            new.channel_id.unwrap_or(ChannelId::from(0))
+            new.channel_id.unwrap_or_else(|| ChannelId::from(0))
         );
 
         if !is_join_event(&old, &new) {
@@ -162,7 +160,7 @@ fn send_notifications(ctx: &Context, voice_state: &VoiceState) {
         .user_id
         .to_user(&ctx.http)
         .map(|u| u.name)
-        .unwrap_or("Someone".to_string());
+        .unwrap_or_else(|_| "Someone".to_string());
 
     if let Some(subscribed_users) =
         pc_data.find_subscribed_users(guild.id.into(), guild_channel.id.into())
@@ -261,7 +259,7 @@ fn handle_add_vc_notify(ctx: &Context, msg: Message) {
         .guild(&ctx.cache)
         // TODO: can this be done cleanly without clone()?
         .map(|g| g.read().name.clone())
-        .unwrap_or("<error fetching server name>".to_string());
+        .unwrap_or_else(|| "<error fetching server name>".to_string());
 
     // TODO: Need to now actually do some stuff here:
     // - Try and find channel with ID
@@ -395,7 +393,7 @@ fn get_list_of_common_channels(
         let is_guild_common = ctx
             .http
             .get_guild_members(guild.id.into(), Some(1), Some(user.id.into()))
-            .map_or(false, |members| members.len() > 0);
+            .map_or(false, |members| !members.is_empty());
 
         if is_guild_common {
             if let Ok(guild_channels) = ctx.http.get_channels(guild.id.into()) {

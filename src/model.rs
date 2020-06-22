@@ -101,7 +101,7 @@ impl PCData {
 impl PCGuild {
     fn new(id: u64) -> PCGuild {
         PCGuild {
-            id: id,
+            id,
             admins: vec![],
             afk_channels: vec![],
             notif_channels: vec![],
@@ -112,7 +112,7 @@ impl PCGuild {
 impl PCNotifChannel {
     fn new(id: u64) -> PCNotifChannel {
         PCNotifChannel {
-            id: id,
+            id,
             subscribed_users: vec![],
         }
     }
