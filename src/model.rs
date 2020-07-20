@@ -35,6 +35,14 @@ impl PCData {
             .map(|channel| &channel.subscribed_users)
     }
 
+    pub fn is_afk_channel(&self, guild_id: u64, channel_id: u64) -> bool {
+        self.guilds
+            .iter()
+            .find(|g| g.id == guild_id)
+            .map(|guild| guild.afk_channels.iter().any(|&c| c == channel_id))
+            .is_some()
+    }
+
     pub fn add_subscription(&mut self, user_id: u64, guild_id: u64, channel_id: u64) {
         let guild = Self::find_or_insert(
             &mut self.guilds,
@@ -72,6 +80,39 @@ impl PCData {
         };
 
         notif_channel.subscribed_users.swap_remove(index);
+        true
+    }
+
+    pub fn is_admin(&self, user_id: u64, guild_id: u64) -> bool {
+        let guild = match self.guilds.iter().find(|g| g.id == guild_id) {
+            Some(g) => g,
+            None => return false,
+        };
+        guild.admins.iter().any(|&u| u == user_id)
+    }
+
+    pub fn add_afk_channel(&mut self, guild_id: u64, channel_id: u64) {
+        let guild = Self::find_or_insert(
+            &mut self.guilds,
+            |g| g.id == guild_id,
+            PCGuild::new(guild_id),
+        );
+
+        Self::insert_if_not_exists(&mut guild.afk_channels, channel_id);
+    }
+
+    pub fn remove_afk_channel(&mut self, guild_id: u64, channel_id: u64) -> bool {
+        let guild = match self.guilds.iter_mut().find(|g| g.id == guild_id) {
+            Some(g) => g,
+            None => return false,
+        };
+
+        let index = match guild.afk_channels.iter().position(|&c| c == channel_id) {
+            Some(i) => i,
+            None => return false,
+        };
+
+        guild.afk_channels.swap_remove(index);
         true
     }
 

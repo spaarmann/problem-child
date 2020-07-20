@@ -5,7 +5,7 @@ use log::{error, info, warn};
 use std::error::Error;
 
 use serenity::model::{
-    channel::{ChannelType, GuildChannel, Message},
+    channel::{Channel, ChannelType, GuildChannel, Message},
     event::ResumedEvent,
     gateway::Ready,
     guild::GuildInfo,
@@ -39,6 +39,10 @@ impl EventHandler for Handler {
             handle_add_vc_notify(&ctx, msg);
         } else if msg.content.starts_with("!remove-vc-notify") {
             handle_remove_vc_notify(&ctx, msg);
+        } else if msg.content.starts_with("!add-afk-channel") {
+            handle_add_afk_channel(&ctx, msg);
+        } else if msg.content.starts_with("!remove-afk-channel") {
+            handle_remove_afk_channel(&ctx, msg);
         } else {
             // !help, or an unknown command, also print help for now.
             handle_help(&ctx, msg);
@@ -218,30 +222,10 @@ fn handle_add_vc_notify(ctx: &Context, msg: Message) {
     let author = &msg.author;
     let id: u64 = author.id.into();
 
-    let channel = match get_channel_argument_from_msg(&msg) {
+    let channel = match get_channel_from_msg(&ctx, &msg) {
         Some(c) => c,
-        None => {
-            send_list_of_common_channels(&ctx, author);
-            return;
-        }
+        None => return,
     };
-
-    let channel_id = match channel.parse::<u64>() {
-        Ok(id) => id,
-        Err(_) => {
-            send_msg(&ctx, author, "Not a valid channel ID!");
-            return;
-        }
-    };
-
-    let channel = match ctx.http.get_channel(channel_id) {
-        Ok(c) => c,
-        Err(_) => {
-            send_msg(&ctx, author, "Could not find channel!");
-            return;
-        }
-    };
-
     let guild_channel_lock = match channel.guild() {
         Some(gc) => gc,
         None => {
@@ -261,12 +245,7 @@ fn handle_add_vc_notify(ctx: &Context, msg: Message) {
         .map(|g| g.read().name.clone())
         .unwrap_or_else(|| "<error fetching server name>".to_string());
 
-    // TODO: Need to now actually do some stuff here:
-    // - Try and find channel with ID
-    // - Get guild for channel
-    // This also allows errors for wrong IDs and name in the answer for correct IDs.
-
-    pc_data.add_subscription(id, guild_channel.guild_id.into(), channel_id);
+    pc_data.add_subscription(id, guild_channel.guild_id.into(), guild_channel.id.into());
 
     send_msg(
         &ctx,
@@ -289,28 +268,9 @@ fn handle_remove_vc_notify(ctx: &Context, msg: Message) {
     let author = &msg.author;
     let id: u64 = author.id.into();
 
-    let channel_input = match get_channel_argument_from_msg(&msg) {
+    let channel = match get_channel_from_msg(&ctx, &msg) {
         Some(c) => c,
-        None => {
-            send_msg(&ctx, author, "Usage: `!remove-vc-notify <channel id>`!");
-            return;
-        }
-    };
-
-    let channel_id = match channel_input.parse::<u64>() {
-        Ok(id) => id,
-        Err(_) => {
-            send_msg(&ctx, author, "Not a valid channel ID!");
-            return;
-        }
-    };
-
-    let channel = match ctx.http.get_channel(channel_id) {
-        Ok(c) => c,
-        Err(_) => {
-            send_msg(&ctx, author, "Could not find channel!");
-            return;
-        }
+        None => return,
     };
 
     let guild_channel_lock = match channel.guild() {
@@ -326,7 +286,7 @@ fn handle_remove_vc_notify(ctx: &Context, msg: Message) {
     };
     let guild_channel = guild_channel_lock.read();
 
-    if pc_data.remove_subscription(id, guild_channel.guild_id.into(), channel_id) {
+    if pc_data.remove_subscription(id, guild_channel.guild_id.into(), guild_channel.id.into()) {
         send_msg(
             &ctx,
             author,
@@ -334,6 +294,97 @@ fn handle_remove_vc_notify(ctx: &Context, msg: Message) {
         );
     } else {
         send_msg(&ctx, author, "You are not subscribed to this channel!");
+    }
+
+    if let Err(err) = storage::save_data(pc_data) {
+        error!("Error saving notif_data.json: {:?}", err);
+    }
+}
+
+fn handle_add_afk_channel(ctx: &Context, msg: Message) {
+    let mut data = ctx.data.write();
+    let pc_data = data.get_mut::<DataKey>().unwrap();
+
+    let author = &msg.author;
+    let id: u64 = author.id.into();
+
+    let channel = match get_channel_from_msg(&ctx, &msg) {
+        Some(c) => c,
+        None => return,
+    };
+
+    let guild_channel_lock = match channel.guild() {
+        Some(gc) => gc,
+        None => {
+            send_msg(
+                &ctx,
+                author,
+                "Could not find server that the channel belongs to!",
+            );
+            return;
+        }
+    };
+    let guild_channel = guild_channel_lock.read();
+
+    if !pc_data.is_admin(id, guild_channel.guild_id.into()) {
+        send_msg(
+            &ctx,
+            author,
+            "You are not permitted to modify administrative settings for this server!",
+        );
+        return;
+    }
+
+    pc_data.add_afk_channel(guild_channel.guild_id.into(), guild_channel.id.into());
+    send_msg(&ctx, author, "Set channel as AFK channel!");
+
+    if let Err(err) = storage::save_data(pc_data) {
+        error!("Error saving notif_data.json: {:?}", err);
+    }
+}
+
+fn handle_remove_afk_channel(ctx: &Context, msg: Message) {
+    let mut data = ctx.data.write();
+    let pc_data = data.get_mut::<DataKey>().unwrap();
+
+    let author = &msg.author;
+    let id: u64 = author.id.into();
+
+    let channel = match get_channel_from_msg(&ctx, &msg) {
+        Some(c) => c,
+        None => return,
+    };
+
+    let guild_channel_lock = match channel.guild() {
+        Some(gc) => gc,
+        None => {
+            send_msg(
+                &ctx,
+                author,
+                "Could not find server that the channel belongs to!",
+            );
+            return;
+        }
+    };
+    let guild_channel = guild_channel_lock.read();
+
+    if !pc_data.is_admin(id, guild_channel.guild_id.into()) {
+        send_msg(
+            &ctx,
+            author,
+            "You are not permitted to modify administrative settings for this server!",
+        );
+        return;
+    }
+
+    if pc_data.remove_afk_channel(guild_channel.guild_id.into(), guild_channel.id.into()) {
+        send_msg(&ctx, author, "Unset channel as AFK channel!");
+    } else {
+        send_msg(
+            &ctx,
+            author,
+            "Could not unset as AFK channel. Is the channel currently an AFK channel?",
+        );
     }
 
     if let Err(err) = storage::save_data(pc_data) {
@@ -359,6 +410,36 @@ fn get_channel_argument_from_msg(msg: &Message) -> Option<String> {
         .trim()
         .find(' ')
         .map(|space_idx| content[(space_idx + 1)..].to_string())
+}
+
+fn get_channel_from_msg(ctx: &Context, msg: &Message) -> Option<Channel> {
+    let author = &msg.author;
+
+    let channel = match get_channel_argument_from_msg(&msg) {
+        Some(c) => c,
+        None => {
+            send_list_of_common_channels(&ctx, author);
+            return None;
+        }
+    };
+
+    let channel_id = match channel.parse::<u64>() {
+        Ok(id) => id,
+        Err(_) => {
+            send_msg(&ctx, author, "Not a valid channel ID!");
+            return None;
+        }
+    };
+
+    let channel = match ctx.http.get_channel(channel_id) {
+        Ok(c) => c,
+        Err(_) => {
+            send_msg(&ctx, author, "Could not find channel!");
+            return None;
+        }
+    };
+
+    Some(channel)
 }
 
 fn send_list_of_common_channels(ctx: &Context, user: &User) {
