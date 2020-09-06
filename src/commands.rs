@@ -160,11 +160,14 @@ fn send_notifications(ctx: &Context, voice_state: &VoiceState) {
     };
     let guild = guild_lock.read();
 
-    let joined_user_name = voice_state
-        .user_id
-        .to_user(&ctx.http)
+    let joined_user = voice_state.user_id.to_user(&ctx.http).ok();
+
+    let joined_user_name = joined_user
+        .clone()
         .map(|u| u.name)
-        .unwrap_or_else(|_| "Someone".to_string());
+        .unwrap_or_else(|| "Someone".to_string());
+
+    let mut notified_users = Vec::new();
 
     if let Some(subscribed_users) =
         pc_data.find_subscribed_users(guild.id.into(), guild_channel.id.into())
@@ -209,6 +212,27 @@ fn send_notifications(ctx: &Context, voice_state: &VoiceState) {
                         "{} joined {} on {}!",
                         joined_user_name, guild_channel.name, guild.name
                     ),
+                );
+
+                notified_users.push(user);
+            }
+        }
+
+        if let Some(joined_user) = joined_user {
+            if pc_data.should_send_notif_copies(joined_user.id.into(), guild.id.into()) {
+                let user_list = match notified_users {
+                    _ if notified_users.is_empty() => "nobody".to_string(),
+                    notified_users => notified_users
+                        .into_iter()
+                        .map(|u| u.name)
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                };
+
+                send_msg(
+                    &ctx,
+                    &joined_user,
+                    &format!("Sent join notifications to {}!", user_list),
                 );
             }
         }

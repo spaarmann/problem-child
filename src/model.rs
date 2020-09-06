@@ -11,9 +11,15 @@ pub struct PCData {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct PCGuild {
     pub id: u64,
-    pub admins: Vec<u64>,
-    pub afk_channels: Vec<u64>,
-    pub notif_channels: Vec<PCNotifChannel>,
+    admins: Vec<AdminUser>,
+    afk_channels: Vec<u64>,
+    notif_channels: Vec<PCNotifChannel>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct AdminUser {
+    id: u64,
+    send_notif_copies: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -88,7 +94,20 @@ impl PCData {
             Some(g) => g,
             None => return false,
         };
-        guild.admins.iter().any(|&u| u == user_id)
+        guild.admins.iter().any(|u| u.id == user_id)
+    }
+
+    pub fn should_send_notif_copies(&self, joined_user_id: u64, guild_id: u64) -> bool {
+        let guild = match self.guilds.iter().find(|g| g.id == guild_id) {
+            Some(g) => g,
+            None => return false,
+        };
+        guild
+            .admins
+            .iter()
+            .find(|u| u.id == joined_user_id)
+            .map(|u| u.send_notif_copies)
+            .unwrap_or(false)
     }
 
     pub fn add_afk_channel(&mut self, guild_id: u64, channel_id: u64) {
