@@ -46,7 +46,7 @@ impl PCData {
             .iter()
             .find(|g| g.id == guild_id)
             .map(|guild| guild.afk_channels.iter().any(|&c| c == channel_id))
-            .is_some()
+            .unwrap_or(false)
     }
 
     pub fn add_subscription(&mut self, user_id: u64, guild_id: u64, channel_id: u64) {

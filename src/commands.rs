@@ -185,6 +185,28 @@ fn send_notifications(ctx: &Context, voice_state: &VoiceState) {
                 continue;
             }
 
+            // Don't notify users if they are already in *any* voice channel on the same
+            // server, unless it's an AFK channel.
+            let skip_because_in_channel = |channel: &GuildChannel| {
+                let k = channel.kind == ChannelType::Voice;
+                let afk = pc_data.is_afk_channel(guild.id.into(), channel.id.into());
+                let member = is_member(channel, user_id, ctx);
+                info!(
+                    "skip_because_in_channel: channel {}, k {}, afk {}, member {}",
+                    channel, k, afk, member
+                );
+                k && !afk && member
+            };
+
+            // TODO: Is there no better way of determining this?
+            if guild
+                .channels
+                .iter()
+                .any(|(_, c)| skip_because_in_channel(&*c.read()))
+            {
+                continue;
+            }
+
             let presence = match guild.presences.get(&user_id) {
                 None => continue,
                 Some(p) => p,
@@ -513,6 +535,9 @@ fn get_list_of_common_channels(
         .collect())
 }
 
-/*fn get_notif_channel(notif_data: &mut Vec<NotifChannel>, id: u64) -> Option<&mut NotifChannel> {
-    notif_data.iter_mut().find(|c| c.id == id)
-}*/
+fn is_member(channel: &GuildChannel, user_id: UserId, ctx: &Context) -> bool {
+    channel
+        .members(&ctx.cache)
+        .map(|members| members.into_iter().any(|u| u.user_id() == user_id))
+        .unwrap_or(false)
+}
