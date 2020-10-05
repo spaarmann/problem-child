@@ -62,7 +62,7 @@ impl EventHandler for Handler {
             new.channel_id.unwrap_or_else(|| ChannelId::from(0))
         );
 
-        if !is_join_event(&old, &new) {
+        if !is_join_event(&ctx, &old, &new) {
             return;
         }
 
@@ -97,23 +97,44 @@ impl EventHandler for Handler {
     }
 }
 
-fn is_join_event(old: &Option<VoiceState>, new_state: &VoiceState) -> bool {
-    let old_state = match old {
-        None => return true,
-        Some(o) => o,
-    };
-
-    let old_channel = match old_state.channel_id {
-        None => return true,
-        Some(id) => id,
-    };
-
+fn is_join_event(ctx: &Context, old: &Option<VoiceState>, new_state: &VoiceState) -> bool {
+    // If there is no new channel, this is by definition not a join event.
     let new_channel = match new_state.channel_id {
         None => return false,
         Some(id) => id,
     };
 
-    old_channel != new_channel
+    let guild = match get_guild_from_channel(ctx, new_channel) {
+        None => return false,
+        Some(g) => g,
+    };
+    let data = ctx.data.read();
+    let pc_data = data.get::<DataKey>().unwrap();
+
+    // If the new channels is an AFK channel, this shouldn't count as a join event.
+    if pc_data.is_afk_channel(guild.into(), new_channel.into()) {
+        return false;
+    }
+
+    // If there is no old state, but the user joined a non-AFK channel, this is a join event.
+    let old_state = match old {
+        None => return true,
+        Some(o) => o,
+    };
+
+    // Same for there not being an old channel.
+    let old_channel = match old_state.channel_id {
+        None => return true,
+        Some(id) => id,
+    };
+
+    // If the old channel is an AFK channel, this should count as joining.
+    if pc_data.is_afk_channel(guild.into(), old_channel.into()) {
+        return true;
+    }
+
+    // Otherwise, if there is an old non-AFK channel, it does not count.
+    false
 }
 
 fn handle_help(ctx: &Context, msg: Message) {
@@ -482,6 +503,14 @@ fn get_channel_from_msg(ctx: &Context, msg: &Message) -> Option<Channel> {
     };
 
     Some(channel)
+}
+
+fn get_guild_from_channel(ctx: &Context, channel: ChannelId) -> Option<GuildId> {
+    ctx.http
+        .get_channel(channel.into())
+        .ok()
+        .and_then(|channel| channel.guild())
+        .map(|guild_lock| guild_lock.read().guild_id)
 }
 
 fn send_list_of_common_channels(ctx: &Context, user: &User) {
