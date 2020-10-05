@@ -112,7 +112,7 @@ fn is_join_event(ctx: &Context, old: &Option<VoiceState>, new_state: &VoiceState
     let pc_data = data.get::<DataKey>().unwrap();
 
     // If the new channels is an AFK channel, this shouldn't count as a join event.
-    if pc_data.is_afk_channel(guild.into(), new_channel.into()) {
+    if pc_data.is_afk_channel(guild, new_channel) {
         return false;
     }
 
@@ -129,7 +129,7 @@ fn is_join_event(ctx: &Context, old: &Option<VoiceState>, new_state: &VoiceState
     };
 
     // If the old channel is an AFK channel, this should count as joining.
-    if pc_data.is_afk_channel(guild.into(), old_channel.into()) {
+    if pc_data.is_afk_channel(guild, old_channel) {
         return true;
     }
 
@@ -190,12 +190,9 @@ fn send_notifications(ctx: &Context, voice_state: &VoiceState) {
 
     let mut notified_users = Vec::new();
 
-    if let Some(subscribed_users) =
-        pc_data.find_subscribed_users(guild.id.into(), guild_channel.id.into())
-    {
-        for uid in subscribed_users {
-            let user_id = UserId::from(*uid);
-
+    let subscribed_users = pc_data.find_subscribed_users(guild.id, guild_channel.id);
+    if let Some(subscribed_users) = subscribed_users {
+        for user_id in subscribed_users {
             if user_id == voice_state.user_id {
                 // Don't notify users that they joined themselves.
                 continue;
@@ -210,7 +207,7 @@ fn send_notifications(ctx: &Context, voice_state: &VoiceState) {
             // server, unless it's an AFK channel.
             let skip_because_in_channel = |channel: &GuildChannel| {
                 let k = channel.kind == ChannelType::Voice;
-                let afk = pc_data.is_afk_channel(guild.id.into(), channel.id.into());
+                let afk = pc_data.is_afk_channel(guild.id, channel.id);
                 let member = is_member(channel, user_id, ctx);
                 k && !afk && member
             };
@@ -258,7 +255,7 @@ fn send_notifications(ctx: &Context, voice_state: &VoiceState) {
         }
 
         if let Some(joined_user) = joined_user {
-            if pc_data.should_send_notif_copies(joined_user.id.into(), guild.id.into()) {
+            if pc_data.should_send_notif_copies(joined_user.id, guild.id) {
                 let user_list = match notified_users {
                     _ if notified_users.is_empty() => "nobody".to_string(),
                     notified_users => notified_users
@@ -283,7 +280,7 @@ fn handle_add_vc_notify(ctx: &Context, msg: Message) {
     let pc_data = data.get_mut::<DataKey>().unwrap();
 
     let author = &msg.author;
-    let id: u64 = author.id.into();
+    let id = author.id;
 
     let channel = match get_channel_from_msg(&ctx, &msg) {
         Some(c) => c,
@@ -308,7 +305,7 @@ fn handle_add_vc_notify(ctx: &Context, msg: Message) {
         .map(|g| g.read().name.clone())
         .unwrap_or_else(|| "<error fetching server name>".to_string());
 
-    pc_data.add_subscription(id, guild_channel.guild_id.into(), guild_channel.id.into());
+    pc_data.add_subscription(id, guild_channel.guild_id, guild_channel.id);
 
     send_msg(
         &ctx,
@@ -329,7 +326,7 @@ fn handle_remove_vc_notify(ctx: &Context, msg: Message) {
     let pc_data = data.get_mut::<DataKey>().unwrap();
 
     let author = &msg.author;
-    let id: u64 = author.id.into();
+    let id = author.id;
 
     let channel = match get_channel_from_msg(&ctx, &msg) {
         Some(c) => c,
@@ -349,7 +346,7 @@ fn handle_remove_vc_notify(ctx: &Context, msg: Message) {
     };
     let guild_channel = guild_channel_lock.read();
 
-    if pc_data.remove_subscription(id, guild_channel.guild_id.into(), guild_channel.id.into()) {
+    if pc_data.remove_subscription(id, guild_channel.guild_id, guild_channel.id) {
         send_msg(
             &ctx,
             author,
@@ -369,7 +366,7 @@ fn handle_add_afk_channel(ctx: &Context, msg: Message) {
     let pc_data = data.get_mut::<DataKey>().unwrap();
 
     let author = &msg.author;
-    let id: u64 = author.id.into();
+    let id = author.id;
 
     let channel = match get_channel_from_msg(&ctx, &msg) {
         Some(c) => c,
@@ -389,7 +386,7 @@ fn handle_add_afk_channel(ctx: &Context, msg: Message) {
     };
     let guild_channel = guild_channel_lock.read();
 
-    if !pc_data.is_admin(id, guild_channel.guild_id.into()) {
+    if !pc_data.is_admin(id, guild_channel.guild_id) {
         send_msg(
             &ctx,
             author,
@@ -398,7 +395,7 @@ fn handle_add_afk_channel(ctx: &Context, msg: Message) {
         return;
     }
 
-    pc_data.add_afk_channel(guild_channel.guild_id.into(), guild_channel.id.into());
+    pc_data.add_afk_channel(guild_channel.guild_id, guild_channel.id);
     send_msg(&ctx, author, "Set channel as AFK channel!");
 
     if let Err(err) = storage::save_data(pc_data) {
@@ -411,7 +408,7 @@ fn handle_remove_afk_channel(ctx: &Context, msg: Message) {
     let pc_data = data.get_mut::<DataKey>().unwrap();
 
     let author = &msg.author;
-    let id: u64 = author.id.into();
+    let id = author.id;
 
     let channel = match get_channel_from_msg(&ctx, &msg) {
         Some(c) => c,
@@ -431,7 +428,7 @@ fn handle_remove_afk_channel(ctx: &Context, msg: Message) {
     };
     let guild_channel = guild_channel_lock.read();
 
-    if !pc_data.is_admin(id, guild_channel.guild_id.into()) {
+    if !pc_data.is_admin(id, guild_channel.guild_id) {
         send_msg(
             &ctx,
             author,
@@ -440,7 +437,7 @@ fn handle_remove_afk_channel(ctx: &Context, msg: Message) {
         return;
     }
 
-    if pc_data.remove_afk_channel(guild_channel.guild_id.into(), guild_channel.id.into()) {
+    if pc_data.remove_afk_channel(guild_channel.guild_id, guild_channel.id) {
         send_msg(&ctx, author, "Unset channel as AFK channel!");
     } else {
         send_msg(
