@@ -191,10 +191,6 @@ fn send_notifications(ctx: &Context, voice_state: &VoiceState) {
                 let k = channel.kind == ChannelType::Voice;
                 let afk = pc_data.is_afk_channel(guild.id.into(), channel.id.into());
                 let member = is_member(channel, user_id, ctx);
-                info!(
-                    "skip_because_in_channel: channel {}, k {}, afk {}, member {}",
-                    channel, k, afk, member
-                );
                 k && !afk && member
             };
 
