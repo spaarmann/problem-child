@@ -3,13 +3,14 @@ mod model;
 mod storage;
 
 use log::{error, info};
-use serenity::client::Client;
+use serenity::{client::bridge::gateway::GatewayIntents, client::Client};
 use simplelog::{Config, LevelFilter, SimpleLogger};
 use std::env;
 use std::process;
 
-fn main() {
-    SimpleLogger::init(LevelFilter::Info, Config::default()).unwrap();
+#[tokio::main]
+async fn main() {
+    SimpleLogger::init(LevelFilter::Warn, Config::default()).unwrap();
 
     info!("Starting up...");
 
@@ -20,18 +21,29 @@ fn main() {
 
     info!("Loaded subscription information!");
 
-    let mut client = Client::new(
-        &env::var("PROBLEM_CHILD_TOKEN").expect("PROBLEM_CHILD_TOKEN"),
-        commands::Handler,
-    )
-    .expect("Error creating client");
+    let mut client =
+        Client::builder(&env::var("PROBLEM_CHILD_TOKEN").expect("PROBLEM_CHILD_TOKEN"))
+            .event_handler(commands::Handler)
+            .intents(
+                GatewayIntents::GUILDS
+                    | GatewayIntents::GUILD_MEMBERS
+                    | GatewayIntents::GUILD_VOICE_STATES
+                    | GatewayIntents::GUILD_PRESENCES
+                    | GatewayIntents::DIRECT_MESSAGES,
+            )
+            .await
+            .expect("Error creating client");
+    //,
+    //    commands::Handler,
+    //)
+    //.expect("Error creating client");
 
     {
-        let mut data = client.data.write();
+        let mut data = client.data.write().await;
         data.insert::<commands::DataKey>(pc_data);
     }
 
-    if let Err(err) = client.start() {
+    if let Err(err) = client.start().await {
         error!("An error occured while running the client: {:?}", err);
     }
 }
