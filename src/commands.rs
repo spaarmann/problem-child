@@ -1,7 +1,7 @@
 use crate::model::PCData;
 use crate::storage;
 
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use std::error::Error;
 
 use serenity::model::{
@@ -63,6 +63,7 @@ impl EventHandler for Handler {
         );
 
         if !is_join_event(&ctx, &old, &new) {
+            debug!("[voice_state_update] Not sending notifs because !is_join_event.");
             return;
         }
 
@@ -190,16 +191,27 @@ fn send_notifications(ctx: &Context, voice_state: &VoiceState) {
 
     let mut notified_users = Vec::new();
 
+    debug!(
+        "[send_notifications] Determining notifs for {:?} having joined {:?}",
+        joined_user, guild_channel
+    );
+
     let subscribed_users = pc_data.find_subscribed_users(guild.id, guild_channel.id);
     if let Some(subscribed_users) = subscribed_users {
         for user_id in subscribed_users {
+            debug!("Testing {:?} from subscribed_users", user_id);
             if user_id == voice_state.user_id {
                 // Don't notify users that they joined themselves.
+                debug!("Not notifying {:?} because they are the joiner.", user_id);
                 continue;
             }
 
             if channel_members.iter().any(|m| m.user_id() == user_id) {
                 // Don't notify users if they are already in the voice channel themselves.
+                debug!(
+                    "Not notifying {:?} because they are in the channel.",
+                    user_id
+                );
                 continue;
             }
 
@@ -218,11 +230,21 @@ fn send_notifications(ctx: &Context, voice_state: &VoiceState) {
                 .iter()
                 .any(|(_, c)| skip_because_in_channel(&*c.read()))
             {
+                debug!(
+                    "Not notifying {:?} because they are in another non-AFK channel.",
+                    user_id
+                );
                 continue;
             }
 
             let presence = match guild.presences.get(&user_id) {
-                None => continue,
+                None => {
+                    debug!(
+                        "Not notifying {:?} because their presence is None.",
+                        user_id
+                    );
+                    continue;
+                }
                 Some(p) => p,
             };
 
@@ -237,7 +259,13 @@ fn send_notifications(ctx: &Context, voice_state: &VoiceState) {
 
             if send_notif {
                 let user = match user_id.to_user(&ctx.http) {
-                    Err(_) => continue,
+                    Err(e) => {
+                        debug!(
+                            "Not notifying {:?} because they could not be turned into a User: {:?}",
+                            user_id, e
+                        );
+                        continue;
+                    }
                     Ok(u) => u,
                 };
 
@@ -251,6 +279,11 @@ fn send_notifications(ctx: &Context, voice_state: &VoiceState) {
                 );
 
                 notified_users.push(user);
+            } else {
+                debug!(
+                    "Not notifying {:?} because send_notif is false with presence.status {:?}",
+                    user_id, presence.status
+                );
             }
         }
 
