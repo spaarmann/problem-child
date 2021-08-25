@@ -23,10 +23,10 @@ echo "Starting deployment to $SRV"
 echo "========================================================"
 
 echo "# Building release version of package..."
-cargo build --release
+cargo build --release --target x86_64-unknown-linux-musl
 
 echo "# Uploading executable to server..."
-sftp $SRV:tmp_deploy <<< 'put target/release/problem_child'
+sftp $SRV:tmp_deploy <<< 'put target/x86_64-unknown-linux-musl/release/problem_child'
 
 echo "# Copying executable to runtime directory and restarting..."
 
