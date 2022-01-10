@@ -27,12 +27,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - name: Install toolchain and target
+      - name: Install Rust toolchain and target
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           profile: minimal
           target: x86_64-unknown-linux-musl
+      - name: Install musl-tools
+        run: sudo apt-get install musl-tools
       - name: Release Build
         run: cargo build --release --target x86_64-unknown-linux-musl
       - name: Upload build artifact
