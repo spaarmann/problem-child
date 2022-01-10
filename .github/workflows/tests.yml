@@ -1,4 +1,4 @@
-name: Tests
+name: Build & Test
 
 on:
   push:
@@ -10,13 +10,23 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-
+  test:
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v2
-    - name: Build
+    - name: Debug Build
       run: cargo build --verbose
     - name: Run tests
       run: cargo test --verbose
+  release-build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Release Build
+        run: cargo build --release --target x86_64-unknown-linux-musl
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: release-build
+          path: target/x86_64-unknown-linux-musl/release/problem_child
