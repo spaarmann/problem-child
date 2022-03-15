@@ -29,6 +29,7 @@ async fn main() {
                     | GatewayIntents::GUILD_MEMBERS
                     | GatewayIntents::GUILD_VOICE_STATES
                     | GatewayIntents::GUILD_PRESENCES
+                    | GatewayIntents::GUILD_MESSAGES
                     | GatewayIntents::DIRECT_MESSAGES,
             )
             .await

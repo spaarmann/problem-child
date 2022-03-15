@@ -27,12 +27,13 @@ pub struct Handler;
 
 #[async_trait]
 impl EventHandler for Handler {
-    async fn message(&self, ctx: Context, msg: Message) {
+    async fn message(&self, ctx: Context, mut msg: Message) {
         if msg.is_own(&ctx.cache).await {
             return;
         }
 
         if !msg.is_private() {
+            suppress_embeds_if_necessary(&ctx, &mut msg).await;
             return;
         }
 
@@ -98,6 +99,16 @@ impl EventHandler for Handler {
 
     async fn unknown(&self, _ctx: Context, name: String, _raw: serde_json::Value) {
         info!("[unknown]: {}", name);
+    }
+}
+
+async fn suppress_embeds_if_necessary(ctx: &Context, msg: &mut Message) {
+    if let [embed] = &msg.embeds[..] {
+        if embed.url.as_deref() == Some("https://heardle.app/") {
+            if let Err(e) = msg.suppress_embeds(&ctx.http).await {
+                error!("Error suppressing embed: {:?}", e);
+            }
+        }
     }
 }
 
