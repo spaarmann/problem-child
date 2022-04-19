@@ -103,10 +103,18 @@ impl EventHandler for Handler {
 }
 
 async fn suppress_embeds_if_necessary(ctx: &Context, msg: &mut Message) {
+    const SUPPRESSED_EMBDS: [&'static str; 3] = [
+        "https://heardle.app/",
+        "https://framed.wtf/",
+        "https://moviedle.app/",
+    ];
+
     if let [embed] = &msg.embeds[..] {
-        if embed.url.as_deref() == Some("https://heardle.app/") {
-            if let Err(e) = msg.suppress_embeds(&ctx.http).await {
-                error!("Error suppressing embed: {:?}", e);
+        if let Some(url) = embed.url.as_deref() {
+            if SUPPRESSED_EMBDS.contains(&url) {
+                if let Err(e) = msg.suppress_embeds(&ctx.http).await {
+                    error!("Error suppressing embed: {:?}", e);
+                }
             }
         }
     }
