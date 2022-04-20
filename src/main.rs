@@ -2,15 +2,15 @@ mod commands;
 mod model;
 mod storage;
 
+use env_logger::Env;
 use log::{error, info};
 use serenity::{client::bridge::gateway::GatewayIntents, client::Client};
-use simplelog::{Config, LevelFilter, SimpleLogger};
 use std::env;
 use std::process;
 
 #[tokio::main]
 async fn main() {
-    SimpleLogger::init(LevelFilter::Warn, Config::default()).unwrap();
+    env_logger::Builder::from_env(Env::default().default_filter_or("warn")).init();
 
     info!("Starting up...");
 
@@ -34,10 +34,6 @@ async fn main() {
             )
             .await
             .expect("Error creating client");
-    //,
-    //    commands::Handler,
-    //)
-    //.expect("Error creating client");
 
     {
         let mut data = client.data.write().await;

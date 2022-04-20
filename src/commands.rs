@@ -28,6 +28,8 @@ pub struct Handler;
 #[async_trait]
 impl EventHandler for Handler {
     async fn message(&self, ctx: Context, mut msg: Message) {
+        debug!("Message from {}", msg.author);
+
         if msg.is_own(&ctx.cache).await {
             return;
         }
@@ -37,7 +39,7 @@ impl EventHandler for Handler {
             return;
         }
 
-        info!("[message] {}: {}", msg.author, msg.content);
+        info!("Handling message: {}: {}", msg.author, msg.content);
 
         if msg.content.starts_with("!add-vc-notify") {
             handle_add_vc_notify(&ctx, msg).await;
@@ -108,6 +110,11 @@ async fn suppress_embeds_if_necessary(ctx: &Context, msg: &mut Message) {
         "https://framed.wtf/",
         "https://moviedle.app/",
     ];
+
+    debug!(
+        "Checking whether embed should be suppressed: {:?}",
+        msg.embeds
+    );
 
     if let [embed] = &msg.embeds[..] {
         if let Some(url) = embed.url.as_deref() {

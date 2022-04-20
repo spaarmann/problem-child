@@ -1,12 +1,12 @@
 [package]
 name = "problem_child"
 version = "0.1.0"
-authors = ["Sebastian Paarmann <sebastian.paarmann@gmail.com>"]
-edition = "2018"
+authors = ["Sebastian Paarmann <git@s-paarmann.de>"]
+edition = "2021"
 
 [dependencies]
 log = "0.4"
-simplelog = "0.11"
+env_logger = "0.9"
 serenity = { version = "0.10", default-features = false, features = ["cache", "client", "gateway", "http", "model", "utils", "rustls_backend"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
