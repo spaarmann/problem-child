@@ -4,7 +4,7 @@ mod storage;
 
 use env_logger::Env;
 use log::{error, info};
-use serenity::{client::bridge::gateway::GatewayIntents, client::Client};
+use serenity::{client::Client, model::gateway::GatewayIntents};
 use std::env;
 use std::process;
 
@@ -21,19 +21,19 @@ async fn main() {
 
     info!("Loaded subscription information!");
 
-    let mut client =
-        Client::builder(&env::var("PROBLEM_CHILD_TOKEN").expect("PROBLEM_CHILD_TOKEN"))
-            .event_handler(commands::Handler)
-            .intents(
-                GatewayIntents::GUILDS
-                    | GatewayIntents::GUILD_MEMBERS
-                    | GatewayIntents::GUILD_VOICE_STATES
-                    | GatewayIntents::GUILD_PRESENCES
-                    | GatewayIntents::GUILD_MESSAGES
-                    | GatewayIntents::DIRECT_MESSAGES,
-            )
-            .await
-            .expect("Error creating client");
+    let mut client = Client::builder(
+        &env::var("PROBLEM_CHILD_TOKEN").expect("PROBLEM_CHILD_TOKEN"),
+        GatewayIntents::GUILDS
+            | GatewayIntents::GUILD_MEMBERS
+            | GatewayIntents::GUILD_VOICE_STATES
+            | GatewayIntents::GUILD_PRESENCES
+            | GatewayIntents::GUILD_MESSAGES
+            | GatewayIntents::DIRECT_MESSAGES
+            | GatewayIntents::MESSAGE_CONTENT,
+    )
+    .event_handler(commands::Handler)
+    .await
+    .expect("Error creating client");
 
     {
         let mut data = client.data.write().await;

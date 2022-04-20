@@ -30,7 +30,7 @@ impl EventHandler for Handler {
     async fn message(&self, ctx: Context, mut msg: Message) {
         debug!("Message from {}", msg.author);
 
-        if msg.is_own(&ctx.cache).await {
+        if msg.is_own(&ctx.cache) {
             return;
         }
 
@@ -55,13 +55,7 @@ impl EventHandler for Handler {
         }
     }
 
-    async fn voice_state_update(
-        &self,
-        ctx: Context,
-        _guild: Option<GuildId>,
-        old: Option<VoiceState>,
-        new: VoiceState,
-    ) {
+    async fn voice_state_update(&self, ctx: Context, old: Option<VoiceState>, new: VoiceState) {
         info!(
             "[voice_state_update] {}: {}",
             new.user_id,
@@ -205,7 +199,7 @@ async fn send_notifications(ctx: &Context, voice_state: &VoiceState) {
         vec![]
     });
 
-    let guild = match guild_channel.guild(&ctx.cache).await {
+    let guild = match guild_channel.guild(&ctx.cache) {
         None => return,
         Some(g) => g,
     };
@@ -246,12 +240,14 @@ async fn send_notifications(ctx: &Context, voice_state: &VoiceState) {
             // TODO: Is there no better way of determining this?
             // TODO: This was a bit prettier as an iterator, but not sure how that plays with async
             for (_, c) in guild.channels.iter() {
-                if skip_because_in_channel(ctx, c, &guild, user_id, pc_data).await {
-                    debug!(
-                        "Not notifying {:?} because they are in another non-AFK channel.",
-                        user_id
-                    );
-                    continue 'user;
+                if let Channel::Guild(c) = c {
+                    if skip_because_in_channel(ctx, c, &guild, user_id, pc_data).await {
+                        debug!(
+                            "Not notifying {:?} because they are in another non-AFK channel.",
+                            user_id
+                        );
+                        continue 'user;
+                    }
                 }
             }
 
@@ -369,7 +365,6 @@ async fn handle_add_vc_notify(ctx: &Context, msg: Message) {
 
     let guild_name = guild_channel
         .guild(&ctx.cache)
-        .await
         .map(|g| g.name)
         .unwrap_or_else(|| "<error fetching server name>".to_string());
 
