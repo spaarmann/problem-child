@@ -15,7 +15,7 @@ async fn main() {
     info!("Starting up...");
 
     let pc_data = storage::load_data().unwrap_or_else(|err| {
-        error!("Error loading notif_data.json file: {:?}", err);
+        error!("Error loading config/pc_data.json file: {:?}", err);
         process::exit(1)
     });
 
