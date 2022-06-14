@@ -99,13 +99,14 @@ impl EventHandler for Handler {
 }
 
 async fn suppress_embeds_if_necessary(ctx: &Context, msg: &mut Message) {
-    const SUPPRESSED_EMBEDS: [&'static str; 6] = [
+    const SUPPRESSED_EMBEDS: [&'static str; 7] = [
         "https://heardle.app/",
         "https://www.heardle.app/",
         "https://framed.wtf/",
         "https://moviedle.app/",
         "https://oec.world/en/tradle",
         "https://posterdle.com/",
+        "https://histordle.com/yeardle",
     ];
 
     debug!(
