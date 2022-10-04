@@ -14,6 +14,8 @@ async fn main() {
 
     info!("Starting up...");
 
+    let token = get_token();
+
     let pc_data = storage::load_data().unwrap_or_else(|err| {
         error!("Error loading config/pc_data.json file: {:?}", err);
         process::exit(1)
@@ -22,7 +24,7 @@ async fn main() {
     info!("Loaded subscription information!");
 
     let mut client = Client::builder(
-        &env::var("PROBLEM_CHILD_TOKEN").expect("PROBLEM_CHILD_TOKEN"),
+        &token,
         GatewayIntents::GUILDS
             | GatewayIntents::GUILD_MEMBERS
             | GatewayIntents::GUILD_VOICE_STATES
@@ -42,5 +44,22 @@ async fn main() {
 
     if let Err(err) = client.start().await {
         error!("An error occured while running the client: {:?}", err);
+    }
+}
+
+fn get_token() -> String {
+    if let Ok(path) = env::var("PROBLEM_CHILD_TOKEN_FILE") {
+        std::fs::read_to_string(path).unwrap_or_else(|err| {
+            error!(
+                "PROBLEM_CHILD_TOKEN_FILE specified, but failed to read file: {:?}",
+                err
+            );
+            process::exit(1);
+        })
+    } else if let Ok(token) = env::var("PROBLEM_CHILD_TOKEN") {
+        token
+    } else {
+        error!("Couldn't get a token from PROBLEM_CHILD_TOKEN or PROBLEM_CHILD_TOKEN_FILE");
+        process::exit(1);
     }
 }
